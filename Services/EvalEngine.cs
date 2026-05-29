@@ -129,6 +129,39 @@ namespace poker.net.Services
         }
 #pragma warning restore CA2014
 
+        /// <summary>
+        /// Evaluates the best 5-card hand from 5, 6, or 7 cards (hole cards + community cards).
+        /// Returns the score, rank category, and the best 5 cards.
+        /// </summary>
+        public static (ushort score, int rank, Card[] bestHand) EvaluateBestHand(Card[] cards)
+        {
+            int n = cards.Length;
+            if (n < 5 || n > 7)
+                throw new ArgumentException("Must provide 5, 6, or 7 cards.", nameof(cards));
+
+            var values = cards.Select(c => c.Value).ToArray();
+
+            ushort bestScore = ushort.MaxValue;
+            int bestA = 0, bestB = 1, bestC = 2, bestD = 3, bestE = 4;
+
+            for (int a = 0; a < n - 4; a++)
+            for (int b = a + 1; b < n - 3; b++)
+            for (int c = b + 1; c < n - 2; c++)
+            for (int d = c + 1; d < n - 1; d++)
+            for (int e = d + 1; e < n; e++)
+            {
+                ushort s = PokerLib.Eval5CardsFast(values[a], values[b], values[c], values[d], values[e]);
+                if (s < bestScore)
+                {
+                    bestScore = s;
+                    bestA = a; bestB = b; bestC = c; bestD = d; bestE = e;
+                }
+            }
+
+            return (bestScore, PokerLib.HandRank(bestScore),
+                new[] { cards[bestA], cards[bestB], cards[bestC], cards[bestD], cards[bestE] });
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Card PickFromSeven(IReadOnlyList<Card> d, int p, int sevenIdx) => sevenIdx switch
         {

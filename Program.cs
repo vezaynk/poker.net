@@ -117,6 +117,70 @@ app.MapPost("/api/evaluate", (EvalRequest req) =>
     return Results.Ok(new EvalResponse { Players = playerResults, Winners = winners });
 });
 
+app.MapPost("/api/evaluate/game", (GameEvalRequest req) =>
+{
+    if (req.MyCards is null || req.MyCards.Length != 2)
+        return Results.BadRequest("Provide exactly 2 hole cards in myCards.");
+
+    if (req.TableState is null)
+        return Results.BadRequest("tableState is required.");
+
+    var community = req.TableState.CommunityCards ?? new();
+    if (community.Count > 5)
+        return Results.BadRequest("communityCards cannot have more than 5 cards.");
+
+    // Need at least 3 community cards (flop) to have a 5-card hand to evaluate
+    if (community.Count < 3)
+        return Results.Ok(new GameEvalResponse
+        {
+            Round            = req.TableState.Round,
+            CommunityCardCount = community.Count,
+            HandRank         = "Preflop — no evaluation yet",
+            ActivePlayers    = ActivePlayers(req.TableState.Players),
+        });
+
+    Card[] myHole;
+    try { myHole = req.MyCards.Select(CardParser.Parse).ToArray(); }
+    catch (ArgumentException ex) { return Results.BadRequest(ex.Message); }
+
+    Card[] board;
+    try { board = community.Select(CardParser.Parse).ToArray(); }
+    catch (ArgumentException ex) { return Results.BadRequest(ex.Message); }
+
+    var allCards = myHole.Concat(board).ToArray();
+    var ids = allCards.Select(c => c.ID).ToList();
+    if (ids.Count != ids.Distinct().Count())
+        return Results.BadRequest("Duplicate cards detected.");
+
+    var (score, rank, bestHand) = EvalEngine.EvaluateBestHand(allCards);
+
+    return Results.Ok(new GameEvalResponse
+    {
+        Round              = req.TableState.Round,
+        CommunityCardCount = community.Count,
+        Score              = score,
+        HandRank           = HandRankName(rank),
+        BestHand           = bestHand.Select(CardParser.Format).ToList(),
+        ActivePlayers      = ActivePlayers(req.TableState.Players),
+    });
+});
+
+static List<ActivePlayer> ActivePlayers(List<TablePlayer>? players) =>
+    players?
+        .Where(p => p.Status != "folded")
+        .Select(p => new ActivePlayer
+        {
+            UserId      = p.UserId,
+            Username    = p.Username,
+            Seat        = p.Seat,
+            Stack       = p.Stack,
+            Bet         = p.Bet,
+            IsDealer    = p.IsDealer,
+            IsSmallBlind = p.IsSmallBlind,
+            IsBigBlind  = p.IsBigBlind,
+        })
+        .ToList() ?? new();
+
 static string HandRankName(int rank) => rank switch
 {
     1 => "Straight Flush",
